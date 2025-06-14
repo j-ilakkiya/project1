@@ -1,50 +1,43 @@
+import streamlit as st
 import pandas as pd
-from fastapi import FastAPI
-from pydantic import BaseModel
-from fastapi.responses import JSONResponse
-import uvicorn
 
-app = FastAPI()
+# Load data
+discourse = pd.read_csv("discourse.csv")
+tds = pd.read_csv("tds.csv")
 
-# Load your CSVs
-df_discourse = pd.read_csv("discourse.csv")
-df_tds = pd.read_csv("tds.csv")
+st.set_page_config(page_title="TDS Knowledge Search", layout="wide")
+st.title("🔍 TDS Knowledge Base Search")
+st.markdown("Search from **Discourse posts** and **TDS content** using a keyword.")
 
-class QuestionRequest(BaseModel):
-    question: str
+query = st.text_input("Enter your question or keyword")
 
-@app.post("/ask")
-def answer_question(request: QuestionRequest):
-    query = request.question.lower()
-    matches = []
+if query:
+    query_lower = query.lower()
+    results = []
 
-    for _, row in df_discourse.iterrows():
-        if query in str(row.get("Content", "")).lower() or query in str(row.get("Title", "")).lower():
-            matches.append({
-                "answer": row.get("Content", ""),
-                "url": row.get("URL", ""),
+    # Search in Discourse
+    for _, row in discourse.iterrows():
+        text = f"{row.get('Title', '')} {row.get('Content', '')}".lower()
+        if query_lower in text:
+            results.append({
                 "source": "Discourse",
-                "title": row.get("Title", "")
+                "title": row.get("Title", "")[:100],
+                "url": row.get("URL", "")
             })
 
-    for _, row in df_tds.iterrows():
-        combined_text = " ".join([str(x).lower() for x in row.astype(str)])
-        if query in combined_text:
-            matches.append({
-                "answer": combined_text,
-                "url": row.get("URL", "#"),
-                "source": "TDS Project Page",
-                "title": row.get("Title", "")
+    # Search in TDS
+    for _, row in tds.iterrows():
+        text = " ".join(str(x).lower() for x in row.astype(str))
+        if query_lower in text:
+            results.append({
+                "source": "TDS",
+                "title": str(row.get("Title", ""))[:100],
+                "url": row.get("URL", "")
             })
 
-    if not matches:
-        return JSONResponse(content={"answer": "No relevant content found.", "links": []})
-
-    top = matches[0]
-    return {
-        "answer": top["answer"],
-        "links": [{"url": top["url"], "text": top["title"] or "Click here", "source": top["source"]}]
-    }
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000)
+    if results:
+        st.success(f"Found {len(results)} results:")
+        for r in results[:10]:
+            st.write(f"**[{r['title']}]({r['url']})** — *{r['source']}*")
+    else:
+        st.error("No results found.")
